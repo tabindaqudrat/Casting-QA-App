@@ -123,7 +123,7 @@ else:
 model.to(device)
 class_names = list(model.names.values()) if isinstance(model.names, dict) else model.names
 
-st.title("🧪 Casting Defect Classification (YOLOv8n-cls)")
+st.title("Casting Defect Classification")
 st.caption("Upload a casting image to classify as OK/DEFECT. Optional: show Grad-CAM for explainability.")
 
 uploads = st.file_uploader("Upload image(s)", type=["jpg","jpeg","png","bmp","tif"], accept_multiple_files=True)
