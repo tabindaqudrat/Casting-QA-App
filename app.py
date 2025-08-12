@@ -49,14 +49,6 @@ def pil_to_tensor(img: Image.Image, imgsz: int) -> torch.Tensor:
     arr = (np.asarray(img).astype(np.float32) / 255.0).transpose(2, 0, 1)
     return torch.from_numpy(arr).unsqueeze(0)
 
-def log_audit(filename: str, top1: str, conf: float):
-    exists = Path(AUDIT_LOG).exists()
-    with open(AUDIT_LOG, "a", newline="") as f:
-        w = csv.writer(f)
-        if not exists:
-            w.writerow(["timestamp_utc", "filename", "top1_class", "confidence"])
-        w.writerow([datetime.utcnow().isoformat(), filename, top1, f"{conf:.4f}"])
-
 def last_conv_layer(m: torch.nn.Module):
     last = None
     for x in m.modules():
@@ -126,12 +118,6 @@ with cols[1]:
         st.write(f"**{f.name}** — inference: **{elapsed_ms:.1f} ms**")
         st.metric("Top-1", names[0], f"{scores[0]*100:.2f}%")
         st.dataframe({"class": names, "confidence": [f"{s*100:.2f}%" for s in scores]}, use_container_width=True)
-
-        # Audit
-        try:
-            log_audit(f.name, names[0], scores[0])
-        except Exception as e:
-            st.warning(f"Audit log write failed: {e}")
 
 st.markdown("---")
 st.caption("Note: This app performs **image-level classification** (e.g., def_front vs ok_front). "
