@@ -134,7 +134,7 @@ cols = st.columns(2)
 with cols[0]:
     st.subheader("Inputs")
     for f in uploads:
-        st.image(to_pil(f.getvalue()), caption=f.name, use_column_width=True)
+        st.image(to_pil(f.getvalue()), caption=f.name, use_container_width=True)
 
 with cols[1]:
     st.subheader("Predictions")
