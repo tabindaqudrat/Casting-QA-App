@@ -101,7 +101,6 @@ with st.sidebar:
     st.header("Settings")
     model_path = st.text_input("Model path", DEFAULT_MODEL_PATH)
     topk = st.slider("Top-K to display", 1, 5, DEFAULT_TOPK, 1)
-    show_cam = st.checkbox("Generate Grad-CAM", value=True)
     device_choice = st.selectbox("Device", ["auto", "cpu", "cuda"], index=0)
     st.caption("Tip: Set a secret **MODEL_URL** to auto-download weights at startup.")
 
@@ -124,7 +123,7 @@ model.to(device)
 class_names = list(model.names.values()) if isinstance(model.names, dict) else model.names
 
 st.title("Casting Defect Classification")
-st.caption("Upload a casting image to classify as OK/DEFECT. Optional: show Grad-CAM for explainability.")
+st.caption("Upload a casting image to classify as OK/DEFECT.")
 
 uploads = st.file_uploader("Upload image(s)", type=["jpg","jpeg","png","bmp","tif"], accept_multiple_files=True)
 if not uploads:
@@ -165,21 +164,6 @@ with cols[1]:
             log_audit(f.name, names[0], scores[0])
         except Exception as e:
             st.warning(f"Audit log write failed: {e}")
-
-        # Grad-CAM
-        if show_cam:
-            try:
-                torch_model = model.model.to(device).eval()
-                target = last_conv_layer(torch_model)
-                if target is None:
-                    st.warning("No Conv2d layer found for Grad-CAM.")
-                else:
-                    t = pil_to_tensor(pil, IMGSZ).to(device)
-                    cam = GradCAM(torch_model, target)(t, int(idx[0]), IMGSZ)
-                    cam_img = overlay_heatmap(pil, cam, alpha=0.35)
-                    st.image(cam_img, caption="Grad-CAM overlay", use_column_width=True)
-            except Exception as e:
-                st.warning(f"Grad-CAM failed: {e}")
 
 st.markdown("---")
 st.caption("Note: This app performs **image-level classification** (e.g., def_front vs ok_front). "
