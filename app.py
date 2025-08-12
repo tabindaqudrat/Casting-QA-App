@@ -16,7 +16,7 @@ IMGSZ = 320
 DEFAULT_TOPK = 5
 AUDIT_LOG = "audit_log.csv"
 
-st.set_page_config(page_title="Casting QA (YOLOv8n-cls)", page_icon="🧪", layout="wide")
+st.set_page_config(page_title="Casting QA", page_icon="🧪", layout="wide")
 
 # -------------------- OPTIONAL: download model --------------------
 def maybe_download_model(target_path: str) -> None:
@@ -63,38 +63,6 @@ def last_conv_layer(m: torch.nn.Module):
         if isinstance(x, torch.nn.Conv2d):
             last = x
     return last
-
-class GradCAM:
-    def __init__(self, model: torch.nn.Module, target_layer: torch.nn.Module):
-        self.model, self.target_layer = model, target_layer
-        self.activations, self.gradients = None, None
-        self.hooks = [
-            target_layer.register_forward_hook(self._save_act),
-            target_layer.register_backward_hook(self._save_grad)
-        ]
-    def _save_act(self, m, i, o): self.activations = o.detach()
-    def _save_grad(self, m, gi, go): self.gradients = go[0].detach()
-    def __call__(self, inp: torch.Tensor, cls_idx: int, imgsz: int):
-        self.model.zero_grad(set_to_none=True)
-        logits = self.model(inp); 
-        if isinstance(logits, (list, tuple)): logits = logits[0]
-        logits[:, cls_idx].sum().backward(retain_graph=True)
-        w = self.gradients.mean(dim=(2,3), keepdim=True)
-        cam = (w * self.activations).sum(dim=1, keepdim=True)
-        cam = F.relu(cam)
-        cam = F.interpolate(cam, size=(imgsz, imgsz), mode="bilinear", align_corners=False)
-        cam = cam.squeeze().cpu().numpy()
-        cam = (cam - cam.min()) / (cam.max() + 1e-8)
-        return cam
-    def close(self):
-        for h in self.hooks: h.remove()
-
-def overlay_heatmap(img: Image.Image, cam: np.ndarray, alpha: float = 0.35) -> Image.Image:
-    import cv2
-    heat = (cam * 255).astype(np.uint8)
-    heat = cv2.applyColorMap(heat, cv2.COLORMAP_JET)
-    heat = cv2.cvtColor(heat, cv2.COLOR_BGR2RGB)
-    return Image.blend(img.convert("RGB"), Image.fromarray(heat).resize(img.size), alpha)
 
 # -------------------- SIDEBAR --------------------
 with st.sidebar:
