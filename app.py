@@ -166,6 +166,20 @@ with cols[1]:
         except Exception as e:
             st.warning(f"Audit log write failed: {e}")
 
+        # Grad-CAM
+        if show_cam:
+            try:
+                torch_model = model.model.to(device).eval()
+                target = last_conv_layer(torch_model)
+                if target is None:
+                    st.warning("No Conv2d layer found for Grad-CAM.")
+                else:
+                    t = pil_to_tensor(pil, IMGSZ).to(device)
+                    cam = GradCAM(torch_model, target)(t, int(idx[0]), IMGSZ)
+                    cam_img = overlay_heatmap(pil, cam, alpha=0.35)
+                    st.image(cam_img, caption="Grad-CAM overlay", use_column_width=True)
+            except Exception as e:
+                st.warning(f"Grad-CAM failed: {e}")
 
 st.markdown("---")
 st.caption("Note: This app performs **image-level classification** (e.g., def_front vs ok_front). "
