@@ -7,4 +7,4 @@ numpy>=2.0,<3
 pillow>=10.4,<11
 
 # On PyPI, "torch" CPU wheels do NOT use the +cpu suffix
-torch>=2.4,<3
+torch
