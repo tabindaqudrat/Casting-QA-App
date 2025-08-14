@@ -1,9 +1,10 @@
---index-url https://download.pytorch.org/whl/cpu
---extra-index-url https://pypi.org/simple
-
 streamlit==1.36.0
 ultralytics==8.2.103
 opencv-python-headless==4.10.0.84
-numpy==1.26.4
-pillow==10.3.0
-torch==2.3.1+cpu
+
+# For Python 3.13, you need wheel versions that exist:
+numpy>=2.0,<3
+pillow>=10.4,<11
+
+# On PyPI, "torch" CPU wheels do NOT use the +cpu suffix
+torch>=2.4,<3
