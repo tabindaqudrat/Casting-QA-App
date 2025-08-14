@@ -6,8 +6,5 @@ ultralytics==8.2.103
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 pillow==10.3.0
-
-# Torch stack (CPU), versions that have cp311 wheels
 torch==2.3.1+cpu
-# torchvision is optional for your app; omit it to keep the build smaller
-# torchvision==0.18.1+cpu
+# torchvision is NOT required for your app; keep it out to shrink the build
