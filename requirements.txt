@@ -1,8 +1,19 @@
+# Streamlit
 streamlit>=1.33
-ultralytics>=8.2.0
-torch>=2.2.0
-torchvision>=0.17.0
-pillow>=10.2.0
-opencv-python-headless>=4.8.1.78
-numpy>=1.26.4
+
+# Ultralytics
+ultralytics>=8.2,<9
+
+# OpenCV (headless is critical for Streamlit Cloud)
+opencv-python-headless>=4.8,<5
+
+# Numpy/Pandas/Pillow (safe pins)
+numpy>=1.26.4,<2
 pandas>=2.2.1
+pillow>=10.2.0
+
+# CPU-only Torch stack (pin matching versions)
+torch==2.3.1+cpu
+torchvision==0.18.1+cpu
+torchaudio==2.3.1+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
