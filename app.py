@@ -14,7 +14,6 @@ from ultralytics import YOLO
 DEFAULT_MODEL_PATH = "best.pt"     # put your weights here (or set MODEL_URL to auto-download)
 IMGSZ = 320
 DEFAULT_TOPK = 5
-AUDIT_LOG = "audit_log.csv"
 
 st.set_page_config(page_title="Casting QA", page_icon="🧪", layout="wide")
 
