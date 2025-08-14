@@ -1,10 +1,6 @@
-streamlit==1.36.0
-ultralytics==8.2.103
-opencv-python-headless==4.10.0.84
-
-# For Python 3.13, you need wheel versions that exist:
-numpy>=2.0,<3
-pillow>=10.4,<11
-
-# On PyPI, "torch" CPU wheels do NOT use the +cpu suffix
+streamlit
+ultralytics
 torch
+torchvision
+numpy
+pillow
