@@ -1,123 +1,225 @@
-# app.py
-import os, io, csv, time
-from datetime import datetime
+import io, os, zipfile, tempfile, shutil, time
 from pathlib import Path
 
-import numpy as np
-import torch
-import torch.nn.functional as F
-from PIL import Image, ImageOps
 import streamlit as st
 from ultralytics import YOLO
+from PIL import Image
+import numpy as np
+import matplotlib.pyplot as plt
 
-# -------------------- CONFIG --------------------
-DEFAULT_MODEL_PATH = "best.pt"     # put your weights here (or set MODEL_URL to auto-download)
-IMGSZ = 320
-DEFAULT_TOPK = 5
+st.set_page_config(page_title="YOLOv8 Casting Defects", layout="wide")
 
-st.set_page_config(page_title="Casting QA", page_icon="🧪", layout="wide")
+# -----------------------------
+# Helpers
+# -----------------------------
+@st.cache_resource
+def load_model(model_bytes: bytes | None, model_path: str | None):
+    if model_bytes:
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pt")
+        tmp.write(model_bytes)
+        tmp.flush(); tmp.close()
+        return YOLO(tmp.name), tmp.name
+    else:
+        if model_path and Path(model_path).exists():
+            return YOLO(model_path), model_path
+        st.stop()
 
-# -------------------- OPTIONAL: download model --------------------
-def maybe_download_model(target_path: str) -> None:
-    """Download weights if MODEL_URL provided via env or Streamlit secrets."""
-    url = st.secrets.get("MODEL_URL", os.getenv("MODEL_URL", "")).strip() if hasattr(st, "secrets") else os.getenv("MODEL_URL", "").strip()
-    if not url or Path(target_path).exists():
-        return
-    import urllib.request
-    Path(target_path).parent.mkdir(parents=True, exist_ok=True)
-    st.info("Downloading model weights…")
-    urllib.request.urlretrieve(url, target_path)
+def save_uploaded_bytes(up, suffix):
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.write(up.read()); tmp.flush(); tmp.close()
+    return tmp.name
 
-# -------------------- UTILITIES --------------------
-@st.cache_resource(show_spinner=True)
-def load_model(path: str):
-    if not Path(path).exists():
-        raise FileNotFoundError(f"Model not found: {path}")
-    model = YOLO(path)
-    model.model.eval()
-    return model
+def unzip_to_temp(zip_bytes) -> str:
+    tmpdir = tempfile.mkdtemp()
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+        zf.extractall(tmpdir)
+    return tmpdir
 
-def to_pil(file_bytes: bytes) -> Image.Image:
-    img = Image.open(io.BytesIO(file_bytes))
-    if img.mode != "RGB":
-        img = ImageOps.grayscale(img).convert("RGB")
-    return img
+def try_plot_green_cm(eval_dir: Path, title="Confusion Matrix — Test (green)"):
+    """
+    Look for a saved confusion matrix array from Ultralytics and replot it with a green colormap.
+    Fallback: tint the existing PNG.
+    """
+    candidates = [
+        eval_dir / "confusion_matrix.npy",
+        eval_dir / "confusion_matrix_normalized.npy",
+        eval_dir / "cm.npy",
+    ]
+    cm = None
+    for p in candidates:
+        if p.exists():
+            try:
+                cm = np.load(p)
+                break
+            except Exception:
+                pass
 
-def pil_to_tensor(img: Image.Image, imgsz: int) -> torch.Tensor:
-    img = img.resize((imgsz, imgsz))
-    arr = (np.asarray(img).astype(np.float32) / 255.0).transpose(2, 0, 1)
-    return torch.from_numpy(arr).unsqueeze(0)
+    fig = plt.figure(figsize=(6,5))
+    ax  = plt.gca()
 
-def last_conv_layer(m: torch.nn.Module):
-    last = None
-    for x in m.modules():
-        if isinstance(x, torch.nn.Conv2d):
-            last = x
-    return last
+    if cm is not None:
+        im = ax.imshow(cm, cmap="Greens")
+        # try to infer labels from shape (append background)
+        n = cm.shape[0]
+        # names.txt saved by Ultralytics if available
+        names_txt = eval_dir / "names.txt"
+        if names_txt.exists():
+            names = [ln.strip() for ln in names_txt.read_text().splitlines() if ln.strip()]
+        else:
+            # generic labels c0..c(n-2) + background
+            names = [f"c{i}" for i in range(n-1)] + ["background"]
 
-# -------------------- SIDEBAR --------------------
-with st.sidebar:
-    st.header("Settings")
-    model_path = st.text_input("Model path", DEFAULT_MODEL_PATH)
-    topk = st.slider("Top-K to display", 1, 5, DEFAULT_TOPK, 1)
-    device_choice = st.selectbox("Device", ["auto", "cpu", "cuda"], index=0)
-    st.caption("Tip: Set a secret **MODEL_URL** to auto-download weights at startup.")
+        ax.set_xticks(np.arange(n)); ax.set_yticks(np.arange(n))
+        ax.set_xticklabels(names, rotation=45, ha="right")
+        ax.set_yticklabels(names)
+        ax.set_xlabel("True"); ax.set_ylabel("Predicted")
+        ax.set_title(title)
+        # annotate
+        for i in range(n):
+            for j in range(n):
+                ax.text(j, i, int(cm[i, j]), ha="center", va="center", fontsize=9)
+        fig.tight_layout()
+    else:
+        # fallback: recolor PNG
+        cm_png = eval_dir / "confusion_matrix.png"
+        if not cm_png.exists():
+            st.info("No confusion matrix found in eval folder.")
+            return
+        img = Image.open(cm_png).convert("L")
+        arr = np.array(img)
+        plt.imshow(arr, cmap="Greens")
+        plt.axis("off")
+        plt.title(title)
+        fig.tight_layout()
 
-# Try downloading if needed
-maybe_download_model(model_path)
+    st.pyplot(fig, clear_figure=True)
 
-# Load model
-try:
-    model = load_model(model_path)
-except Exception as e:
-    st.error(f"Failed to load model: {e}")
-    st.stop()
+# -----------------------------
+# Sidebar: model selection
+# -----------------------------
+st.sidebar.header("Model")
+uploaded_model = st.sidebar.file_uploader("Upload YOLOv8 .pt", type=["pt"])
+default_model_path = st.sidebar.text_input("...or path to a local .pt", value="best.pt")
+conf_thres = st.sidebar.slider("Confidence", 0.05, 0.95, 0.25, 0.05)
+iou_thres  = st.sidebar.slider("IoU (NMS / metrics)", 0.3, 0.9, 0.5, 0.05)
+imgsz      = st.sidebar.selectbox("Image size", [512, 640, 768, 896], index=1)
 
-# pick device
-if device_choice == "auto":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-else:
-    device = device_choice
-model.to(device)
-class_names = list(model.names.values()) if isinstance(model.names, dict) else model.names
+with st.spinner("Loading model..."):
+    model, model_used_path = load_model(uploaded_model.read() if uploaded_model else None, default_model_path)
+st.sidebar.success(f"Loaded: {Path(model_used_path).name}")
 
-st.title("Casting Defect Classification")
-st.caption("Upload a casting image to classify as OK/DEFECT.")
+# -----------------------------
+# Tabs
+# -----------------------------
+tab_pred, tab_eval = st.tabs(["🔍 Inference", "📊 Evaluate & Green Confusion Matrix"])
 
-uploads = st.file_uploader("Upload image(s)", type=["jpg","jpeg","png","bmp","tif"], accept_multiple_files=True)
-if not uploads:
-    st.info("Upload one or more images to begin…")
-    st.stop()
+# --------- Inference tab ----------
+with tab_pred:
+    st.subheader("Run inference on images or a short video")
+    src = st.radio("Choose input", ["Image(s)", "Video"], horizontal=True)
 
-cols = st.columns(2)
-with cols[0]:
-    st.subheader("Inputs")
-    for f in uploads:
-        st.image(to_pil(f.getvalue()), caption=f.name, use_container_width=True)
+    if src == "Image(s)":
+        imgs = st.file_uploader("Upload image files", type=["png","jpg","jpeg","bmp"], accept_multiple_files=True)
+        if imgs:
+            cols = st.columns(2)
+            out_dir = Path(tempfile.mkdtemp())
+            for i, up in enumerate(imgs):
+                im_path = save_uploaded_bytes(up, suffix=f"_{i}.png")
+                results = model.predict(im_path, imgsz=imgsz, conf=conf_thres, iou=iou_thres, verbose=False, save=True, project=str(out_dir), name="pred")
+            st.success("Predictions complete.")
+            pred_dir = out_dir / "pred"
+            for p in sorted(pred_dir.glob("*.jpg")):
+                st.image(str(p), caption=p.name, use_container_width=True)
+    else:
+        vid = st.file_uploader("Upload a short MP4/MOV", type=["mp4","mov","avi","mkv"])
+        if vid:
+            vpath = save_uploaded_bytes(vid, suffix=".mp4")
+            out_dir = Path(tempfile.mkdtemp())
+            results = model.predict(vpath, imgsz=imgsz, conf=conf_thres, iou=iou_thres, verbose=False,
+                                    save=True, project=str(out_dir), name="pred")
+            # show first rendered frame (Streamlit can't autoplay arbitrary codecs reliably)
+            rendered = sorted((out_dir/"pred").glob("*"))
+            if rendered:
+                st.video(str(vpath))
+                st.caption("Original video (predicted file saved to temp folder).")
 
-with cols[1]:
-    st.subheader("Predictions")
-    for f in uploads:
-        pil = to_pil(f.getvalue())
-        start = time.time()
-        # Ultralytics predict handles preprocessing internally and returns class probs
-        results = model.predict(source=[np.array(pil)], imgsz=IMGSZ, device=device, verbose=False)
-        elapsed_ms = (time.time() - start) * 1000
+# --------- Evaluate tab ----------
+with tab_eval:
+    st.subheader("Evaluate a YOLO-format dataset and plot a GREEN confusion matrix")
 
-        r = results[0]
-        if r.probs is None:
-            st.error("No probabilities returned; ensure classification weights (yolov8*-cls).")
-            continue
+    st.markdown("""
+    **Option A (easiest)**: Upload a ZIP that contains your dataset folders (`images/`, `labels/`) and a `data.yaml` inside.
+    \n**Option B**: Provide a path on the server to an existing `data.yaml`.
+    """)
 
-        probs = r.probs.data.cpu().numpy()
-        idx = np.argsort(-probs)[:topk]
-        names = [class_names[i] for i in idx]
-        scores = [float(probs[i]) for i in idx]
+    up_zip = st.file_uploader("Upload dataset ZIP (optional)", type=["zip"])
+    data_yaml_path = st.text_input("Or path to data.yaml on server (optional)", value="")
+    split = st.selectbox("Split to evaluate", ["val", "test"], index=1)
+    batch = st.number_input("Batch size", min_value=1, max_value=64, value=16)
 
-        st.write(f"**{f.name}** — inference: **{elapsed_ms:.1f} ms**")
-        st.metric("Top-1", names[0], f"{scores[0]*100:.2f}%")
-        st.dataframe({"class": names, "confidence": [f"{s*100:.2f}%" for s in scores]}, use_container_width=True)
+    if st.button("Run Evaluation"):
+        with st.spinner("Evaluating..."):
+            work_dir = None
+            yaml_to_use = None
+            try:
+                if up_zip is not None:
+                    work_dir = unzip_to_temp(up_zip.read())
+                    # try to locate a data.yaml in the extracted bundle
+                    cands = list(Path(work_dir).rglob("data.yaml"))
+                    if not cands:
+                        st.error("No data.yaml found in the uploaded ZIP.")
+                        st.stop()
+                    yaml_to_use = str(cands[0])
+                elif data_yaml_path and Path(data_yaml_path).exists():
+                    yaml_to_use = data_yaml_path
+                else:
+                    st.error("Please upload a dataset ZIP or give a valid path to data.yaml.")
+                    st.stop()
 
-st.markdown("---")
-st.caption("Note: This app performs **image-level classification** (e.g., def_front vs ok_front). "
-           "Keep validation/test sets augmentation-free for fair evaluation.")
+                # Run evaluation
+                out_project = Path(tempfile.mkdtemp())
+                metrics = model.val(
+                    data=yaml_to_use,
+                    split=split,
+                    imgsz=imgsz,
+                    batch=batch,
+                    conf=conf_thres,
+                    iou=iou_thres,
+                    plots=True,
+                    save_json=True,
+                    project=str(out_project),
+                    name=f"{split}_eval",
+                    verbose=False
+                )
+
+                save_dir = Path(getattr(metrics, "save_dir", out_project / f"{split}_eval"))
+                st.success(f"Done. Results in: {save_dir}")
+
+                # Print key metrics
+                if hasattr(metrics, "results_dict") and isinstance(metrics.results_dict, dict):
+                    st.write("**Key metrics**")
+                    st.json({k: float(v) for k, v in metrics.results_dict.items()})
+
+                # Green confusion matrix
+                st.write("**Green confusion matrix**")
+                try_plot_green_cm(save_dir, title=f"Confusion Matrix — {split} (green)")
+
+                # Download buttons
+                cm_png = save_dir / "confusion_matrix.png"
+                if cm_png.exists():
+                    st.download_button("Download original confusion_matrix.png",
+                                       data=cm_png.read_bytes(), file_name=cm_png.name)
+                green_png = save_dir / "confusion_matrix_green.png"
+                if green_png.exists():
+                    st.download_button("Download green confusion matrix",
+                                       data=green_png.read_bytes(), file_name=green_png.name)
+
+                res_csv = save_dir / "results.csv"
+                if res_csv.exists():
+                    st.download_button("Download results.csv",
+                                       data=res_csv.read_bytes(), file_name=res_csv.name)
+
+            finally:
+                # clean temporary extraction if used
+                if work_dir and Path(work_dir).exists():
+                    shutil.rmtree(work_dir, ignore_errors=True)
