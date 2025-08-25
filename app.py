@@ -54,7 +54,7 @@ st.sidebar.success(f"Loaded: {Path(resolved_path).name}")
 
 conf_thres = st.sidebar.slider("Confidence threshold", 0.05, 0.95, 0.35, 0.05)
 iou_thres  = st.sidebar.slider("IoU (NMS)", 0.30, 0.90, 0.50, 0.05)
-imgsz      = st.sidebar.selectbox("Image size", [512, 640, 768, 896], index=1)
+imgsz      = st.sidebar.selectbox("Image size", [300, 320, 512, 640], index=1)
 
 # -----------------------------
 # Image inference UI
