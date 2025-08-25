@@ -15,7 +15,7 @@ from ultralytics import YOLO
 # -----------------------------
 # Settings
 # -----------------------------
-DEFAULT_WEIGHTS = "best.pt"      # try this first; we also auto-discover *.pt below
+DEFAULT_WEIGHTS = "best (1).pt"      # try this first; we also auto-discover *.pt below
 PAGE_TITLE = "Casting Defects Detection"
 
 st.set_page_config(page_title=PAGE_TITLE, layout="wide")
