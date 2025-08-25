@@ -16,7 +16,8 @@ from ultralytics import YOLO
 # -----------------------------
 # Settings
 # -----------------------------
-DEFAULT_WEIGHTS = "best(1).pt"   # change if your repo path is different
+DEFAULT_WEIGHTS = "best (1).pt"
+   # change if your repo path is different
 PAGE_TITLE = "YOLOv8 Casting Defects — Image Inference"
 
 st.set_page_config(page_title=PAGE_TITLE, layout="wide")
